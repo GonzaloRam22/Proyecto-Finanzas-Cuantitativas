@@ -4,6 +4,37 @@ import matplotlib.pyplot as plt
 from scipy.stats import norm
 import seaborn as sns
 from scipy.optimize import minimize_scalar
+from yahoofinancials import YahooFinancials
+import math
+
+def generate_data(ticker, initial_date, end_date):
+
+    # Obtener los datos de Yahoo Financials
+    yahoo_financials = YahooFinancials(ticker)
+    data = yahoo_financials.get_historical_price_data(initial_date, end_date, "daily")
+    df = pd.DataFrame(data[ticker]["prices"])
+
+    # Convierte la columna de fecha a un tipo de dato datetime
+    df['formatted_date'] = pd.to_datetime(df['formatted_date'])
+
+    # Establece la fecha como índice
+    df.set_index('formatted_date', inplace=True)
+
+    # Agrupa los datos por mes y calcula la volatilidad mensual
+    volatilidad_mensual = df['adjclose'].resample('M').std()
+
+    v_0 = volatilidad_mensual[0]
+    theta = volatilidad_mensual[-1]
+    ret_log = volatilidad_mensual.pct_change().apply(lambda x: math.log(1 + x)).dropna()
+    kappa = ret_log.mean()
+    sigmaV = volatilidad_mensual.std()
+    proms_adj = df['adjclose'].resample('M').mean()
+    retlog_prices = proms_adj.pct_change().apply(lambda x: math.log(1 + x)).dropna()
+    rhoSV = np.corrcoef(retlog_prices, ret_log)[0,1]
+    S = df['adjclose'].iloc[-1]
+    return (df, S, v_0,theta, kappa, sigmaV, rhoSV)
+
+
 
 
 def generate_heston_paths(S, T, r, kappa, theta, v_0, rho, xi,
@@ -43,27 +74,27 @@ T = 1
 rho = rhoSV
 """
 
-def graficar_simulacion_precios_y_volatilidades(prices, volatilities, steps):
+def graficar_simulacion_precios_y_volatilidades(prices, volatilities, Npaths):
     # Gráfica de precios
     plt.figure(figsize=(12, 5))  # Opcional: ajusta el tamaño de la figura
     plt.subplot(1, 2, 1)  # Divide la figura en 1 fila y 2 columnas, selecciona la primera subtrama
-    for i in range(steps):
+    for i in range(Npaths):
         plt.plot(prices[i, :])
     plt.title('Heston Prices Paths Simulation')
     plt.xlabel('Time Steps')
     plt.ylabel('Stock Price')
-    plt.axis([0, 250, 0, 3000])
+    #plt.axis([0, 250, 0, 3000])
 
     # Gráfica de volatilidades
     plt.subplot(1, 2, 2)  # Selecciona la segunda subtrama
-    for i in range(steps):
+    for i in range(Npaths):
         plt.plot(volatilities[i, :])
     plt.title('Heston Stochastic Volatility Simulation')
     plt.xlabel('Time Steps')
     plt.ylabel('Volatility')
 
     plt.tight_layout()  # Ajusta automáticamente los márgenes para evitar solapamientos
-    plt.show()
+    return plt.gcf()
 
 def graficar_simulacion_precio_y_volatilidad2(prices, volatilities, steps, y, theta):
     plt.figure(figsize=(14, 6))  # Ajusta el tamaño de la figura
@@ -91,8 +122,7 @@ def graficar_simulacion_precio_y_volatilidad2(prices, volatilities, steps, y, th
     plt.legend(fontsize=15)
 
     plt.tight_layout()  # Ajusta automáticamente los márgenes para evitar solapamientos
-    plt.show()
-
+    return plt.gcf()
 
 #Funcion para calcular los puts y calls de las opciones
 def calculate_option_prices(S_t, K, T, r, sigma, type_='call'):
@@ -161,17 +191,19 @@ def calcular_precios_positivos_y_negativos(S, T, r, kappa, theta, v_0, rho, xi, 
     return prices_pos, prices_neg
 
 def graficar_tail_density(prices_pos, prices_neg):
+    plt.figure(figsize=(10, 8))
     fig, ax = plt.subplots()
 
     ax = sns.kdeplot(data=prices_pos, label="Positive", ax=ax)
     ax = sns.kdeplot(data=prices_neg, label="Negative", ax=ax)
 
     ax.set_title('Tail Density by Sign of Rho')
-    plt.axis([0, 20000, 0, 0.00004])
+    #plt.axis([0, 20000, 0, 0.00004])
     plt.xlabel('$S_T$')
     plt.ylabel('Density')
     plt.legend()
-    plt.show()
+    return fig
+
 
 #Función para obtener la volatilidad implicita
 def implied_vol(opt_value, S, K, T, r, type_='call'):
@@ -191,73 +223,90 @@ def implied_vol(opt_value, S, K, T, r, type_='call'):
     res = minimize_scalar(option_obj, bounds=bounds, method='bounded')
     return res.x
 
-def calcular_y_graficar_smileBSvolatility(S, k1, T, r, xi):
+def calcular_y_graficar_smileBSvolatility_calls(S, k1, T, r, xi):
     # Valores de los precios de ejercicio
     strikes = k1
 
-    # Listas para almacenar las volatilidades implícitas
+    # Lista para almacenar las volatilidades implícitas de las opciones de compra
     iv_values_c = []
-    iv_values_p = []
 
     for K_value in strikes:
         C = calculate_option_prices(S, K_value, T, r, xi, type_='call')
-        Pu = calculate_option_prices(S, K_value, T, r, xi, type_='put')
         iv_call = implied_vol(C, S, K_value, T, r)
         iv_values_c.append(iv_call)
-        iv_put = implied_vol(Pu, S, K_value, T, r)
-        iv_values_p.append(iv_put)
 
     # Grafica la volatilidad implícita para las opciones de compra
+    plt.figure(figsize=(10, 8))
     plt.plot(strikes, iv_values_c)
     plt.ylabel('Implied Volatility')
     plt.xlabel('Strike')
     plt.axvline(S, color='black', linestyle='--', label='Spot Price')
     plt.title('Implied Volatility Call Smile from B&S Heston Model')
     plt.legend()
-    plt.show()
+    return plt.gcf()
+
+def calcular_y_graficar_smileBSvolatility_puts(S, k1, T, r, xi):
+    # Valores de los precios de ejercicio
+    strikes = k1
+
+    # Lista para almacenar las volatilidades implícitas de las opciones de venta
+    iv_values_p = []
+
+    for K_value in strikes:
+        Pu = calculate_option_prices(S, K_value, T, r, xi, type_='put')
+        iv_put = implied_vol(Pu, S, K_value, T, r)
+        iv_values_p.append(iv_put)
 
     # Grafica la volatilidad implícita para las opciones de venta
+    plt.figure(figsize=(10, 8))
     plt.plot(strikes, iv_values_p)
     plt.ylabel('Implied Volatility')
     plt.xlabel('Strike')
     plt.axvline(S, color='black', linestyle='--', label='Spot Price')
     plt.title('Implied Volatility Put Smile from B&S Heston Model')
     plt.legend()
-    plt.show()
+    return plt.gcf()
 
 
-def calcular_y_graficar_volatilidades_implícitas(S, k1, T, r, prices_pos, prices_neg, rhoSV, xi, steps, Npaths):
-    # Calcula las volatilidades implícitas para opciones de compra
-    def calcular_volatilidades(tipo):
-        opciones = []
-        for L in k1:
-            if tipo == 'call':
-                P = np.mean(np.maximum(prices_pos - L, 0)) * np.exp(-r * T)
-                opciones.append(P)
-            elif tipo == 'put':
-                P = np.mean(np.maximum(L - prices_neg, 0)) * np.exp(-r * T)
-                opciones.append(P)
 
-        ivs = [implied_vol(P, S, L, T, r, type_=tipo) for P, L in zip(opciones, k1)]
 
-        plt.plot(k1, ivs)
-        plt.ylabel('Implied Volatility')
-        plt.xlabel('Strike')
-        plt.axvline(S, color='black', linestyle='--', label='Spot Price')
+def graficar_smile_put(S, k1, prices_neg, T, r):
+    puts = []
 
-        if tipo == 'call':
-            plt.title('Implied Volatility Smile Call from Heston Model')
-        elif tipo == 'put':
-            plt.title('Implied Volatility Smile Put from Heston Model')
+    for L in k1:
+        # Calcular el valor de la opción de venta (put) para un precio de ejercicio L
+        # Usando el promedio de las diferencias entre el precio de ejercicio y los precios finales de simulación (prices_neg) para todas las simulaciones
+        P = np.mean(np.maximum(L - prices_neg, 0)) * np.exp(-r * T)
+        puts.append(P)
 
-        plt.legend()
-        plt.show()
+    ivs = [implied_vol(P, S, L, T, r, type_='put') for P, L in zip(puts, k1)]
 
-    # Calcular y graficar volatilidades implícitas para opciones de compra
-    calcular_volatilidades('call')
+    plt.figure(figsize= (10,8))
+    plt.plot(k1, ivs)
+    plt.ylabel('Implied Volatility')
+    plt.xlabel('Strike')
+    plt.axvline(S, color='black', linestyle='--', label='Spot Price')
+    plt.title('Implied Volatility Smile Put from Heston Model')
+    plt.legend()
+    return plt.gcf()
 
-    # Calcular y graficar volatilidades implícitas para opciones de venta
-    calcular_volatilidades('put')
+def graficar_smile_call(S, k1, prices_pos, T, r):
+    calls = []
+
+    for L in k1:
+        Ca = np.mean(np.maximum(prices_pos - L, 0)) * np.exp(-r * T)
+        calls.append(Ca)
+
+    ivs = [implied_vol(Ca, S, L, T, r, type_='call') for Ca, L in zip(calls, k1)]
+
+    plt.figure(figsize=(10, 8))
+    plt.plot(k1, ivs)
+    plt.ylabel('Implied Volatility')
+    plt.xlabel('Strike')
+    plt.axvline(S, color='black', linestyle='--', label='Spot Price')
+    plt.title('Implied Volatility Smile Call from Heston Model')
+    plt.legend()
+    return plt.gcf()
 
 def calcular_volatilidades(tipo, k1, prices_pos, prices_neg, r, T, S):
     opciones = []
@@ -273,6 +322,7 @@ def calcular_volatilidades(tipo, k1, prices_pos, prices_neg, r, T, S):
 
     return ivs
 
+
 def plot_implied_volatility_surface(k1, tenors, ivs):
     # Crea la cuadrícula de precios y tenors
     X, Y = np.meshgrid(k1, tenors)
@@ -281,7 +331,7 @@ def plot_implied_volatility_surface(k1, tenors, ivs):
     ivs_matrix = np.tile(ivs, (len(tenors), 1))
 
     # Crea la figura tridimensional
-    fig = plt.figure()
+    fig = plt.figure(figsize=((10,8)))
     ax = fig.add_subplot(111, projection='3d')
 
     # Grafica la superficie de volatilidad implícita
@@ -293,7 +343,4 @@ def plot_implied_volatility_surface(k1, tenors, ivs):
     ax.set_zlabel('Implied Volatility')
     ax.set_title('Implied Volatility Surface')
 
-    # Muestra la gráfica
-    plt.show()
-
-
+    return fig

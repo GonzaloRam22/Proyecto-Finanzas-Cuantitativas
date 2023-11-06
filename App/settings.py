@@ -1,0 +1,11 @@
+import os
+
+STREAMLIT_DEFAULT_FRONTEND_MODULE_NAME = os.environ.get(
+    "STREAMLIT_DEFAULT_FRONTEND_MODULE_NAME",
+    default="frontend"
+)
+
+STREAMLIT_DEFAULT_FRONTEND_VIEW_FUNCTION = os.environ.get(
+    "STREAMLIT_DEFAULT_FRONTEND_VIEW_FUNCTION",
+    default="view"
+)
