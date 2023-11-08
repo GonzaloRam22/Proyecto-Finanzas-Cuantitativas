@@ -259,6 +259,7 @@ def calcular_y_graficar_volatilidades_implícitas(S, k1, T, r, prices_pos, price
     # Calcular y graficar volatilidades implícitas para opciones de venta
     calcular_volatilidades('put')
 
+
 def calcular_volatilidades(tipo, k1, prices_pos, prices_neg, r, T, S):
     opciones = []
     for L in k1:
@@ -272,6 +273,7 @@ def calcular_volatilidades(tipo, k1, prices_pos, prices_neg, r, T, S):
     ivs = [implied_vol(P, S, L, T, r, type_=tipo) for P, L in zip(opciones, k1)]
 
     return ivs
+
 
 def plot_implied_volatility_surface(k1, tenors, ivs):
     # Crea la cuadrícula de precios y tenors
@@ -295,5 +297,4 @@ def plot_implied_volatility_surface(k1, tenors, ivs):
 
     # Muestra la gráfica
     plt.show()
-
 
